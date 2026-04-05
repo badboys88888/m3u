@@ -1,2 +1,2 @@
 #genre# jackTV
-jackTV,https://php.946985.filegear-sg.me/jackTV.m3u
+jackTV,https://raw.githubusercontent.com/badboys88888/m3u/main/jackTV.m3u
