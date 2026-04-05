@@ -6,51 +6,50 @@ import requests
 CHANNEL_FILE = "channels.txt"
 OUTPUT_FILE = "live.m3u"
 
-EPG_URL_XML = "http://192.168.6.15:5678/t.xml.gz"
-EPG_JSON_URL = "https://raw.githubusercontent.com/badboys88888/hk/main/epg_data.json"
-
-
-# ===================== 读取远程EPG ===================== #
-def load_epg():
-    try:
-        r = requests.get(EPG_JSON_URL, timeout=10)
-        data = r.json()
-    except:
-        print("❌ EPG加载失败")
-        return {}
-
-    epg_map = {}
-
-    for item in data.get("epgs", []):
-        epgid = item.get("epgid", "").strip()
-        logo = item.get("logo", "").strip()
-        names = item.get("name", "")
-
-        alias_list = [n.strip() for n in names.split(",") if n.strip()]
-
-        for name in alias_list:
-            epg_map[normalize(name)] = {
-                "id": epgid,
-                "logo": logo
-            }
-
-    return epg_map
+EPG_XML = "http://192.168.6.15:5678/t.xml.gz"
+EPG_JSON = "https://raw.githubusercontent.com/badboys88888/hk/main/epg_data.json"
 
 
 # ===================== 名字清洗 ===================== #
 def normalize(name):
     name = name.upper()
-    name = name.replace("HD", "")
-    name = name.replace("高清", "")
-    name = name.replace("[", "").replace("]", "")
-    name = name.replace("频道", "")
-    name = name.strip()
-    return name
+    for x in ["HD", "高清", "频道", "[", "]", " "]:
+        name = name.replace(x, "")
+    return name.strip()
+
+
+# ===================== 读取EPG ===================== #
+def load_epg():
+    print("📥 加载EPG...")
+    try:
+        r = requests.get(EPG_JSON, timeout=10)
+        data = r.json()
+    except Exception as e:
+        print("❌ EPG加载失败:", e)
+        return {}
+
+    epg_map = {}
+
+    for item in data.get("epgs", []):
+        epgid = item.get("epgid", "")
+        logo = item.get("logo", "")
+        names = item.get("name", "")
+
+        for n in names.split(","):
+            n = n.strip()
+            if n:
+                epg_map[normalize(n)] = {
+                    "id": epgid,
+                    "logo": logo
+                }
+
+    print("✅ EPG数量:", len(epg_map))
+    return epg_map
 
 
 # ===================== 匹配 ===================== #
-def match_epg(channel_name, epg_map):
-    key = normalize(channel_name)
+def match_epg(name, epg_map):
+    key = normalize(name)
 
     # 精确
     if key in epg_map:
@@ -69,14 +68,30 @@ def is_m3u(url):
     return ".m3u" in url.lower()
 
 
-# ===================== 展开m3u ===================== #
+# ===================== 展开m3u（带调试） ===================== #
 def expand_m3u(url):
+    print("\n📡 展开:", url)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://google.com"
+    }
+
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        print("状态码:", r.status_code)
+        print("类型:", r.headers.get("Content-Type"))
+
         r.encoding = "utf-8"
-        lines = r.text.splitlines()
-    except:
+        text = r.text
+
+        print("前100字符:", text[:100])
+
+    except Exception as e:
+        print("❌ 请求失败:", e)
         return []
+
+    lines = text.splitlines()
 
     result = []
     name = ""
@@ -93,6 +108,7 @@ def expand_m3u(url):
         elif line.startswith("http"):
             result.append((name, line))
 
+    print("✅ 解析数量:", len(result))
     return result
 
 
@@ -103,8 +119,10 @@ def generate():
     with open(CHANNEL_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
+    total = 0
+
     with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        out.write(f'#EXTM3U x-tvg-url="{EPG_URL_XML}"\n')
+        out.write(f'#EXTM3U x-tvg-url="{EPG_XML}"\n')
 
         group = ""
 
@@ -130,15 +148,19 @@ def generate():
             if is_m3u(url):
                 subs = expand_m3u(url)
 
-                for sub_name, sub_url in subs:
-                    sub_name = sub_name.strip()
+                if not subs:
+                    print("⚠️ 没解析到，跳过")
+                    continue
 
+                for sub_name, sub_url in subs:
                     epg = match_epg(sub_name, epg_map)
 
                     out.write(
                         f'#EXTINF:-1 tvg-id="{epg["id"]}" tvg-name="{sub_name}" tvg-logo="{epg["logo"]}" group-title="{group}",{sub_name}\n'
                     )
                     out.write(f"{sub_url}\n")
+
+                    total += 1
 
                 continue
 
@@ -150,8 +172,12 @@ def generate():
             )
             out.write(f"{url}\n")
 
+            total += 1
+
+    print("\n🎯 总频道数:", total)
     print("✅ live.m3u 生成完成")
 
 
+# ===================== 启动 ===================== #
 if __name__ == "__main__":
     generate()
