@@ -68,30 +68,34 @@ def is_m3u(url):
     return ".m3u" in url.lower()
 
 
-# ===================== 展开m3u（带调试） ===================== #
+# ===================== 展开m3u（支持本地） ===================== #
 def expand_m3u(url):
     print("\n📡 展开:", url)
 
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://google.com"
-    }
+    # ===== 本地文件 =====
+    if not url.startswith("http"):
+        print("📂 本地文件")
+        try:
+            with open(url, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            print("❌ 本地读取失败:", e)
+            return []
+    else:
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-    try:
-        r = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
-        print("状态码:", r.status_code)
-        print("类型:", r.headers.get("Content-Type"))
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            print("状态码:", r.status_code)
 
-        r.encoding = "utf-8"
-        text = r.text
+            r.encoding = "utf-8"
+            lines = r.text.splitlines()
 
-        print("前100字符:", text[:100])
-
-    except Exception as e:
-        print("❌ 请求失败:", e)
-        return []
-
-    lines = text.splitlines()
+        except Exception as e:
+            print("❌ 请求失败:", e)
+            return []
 
     result = []
     name = ""
@@ -155,8 +159,12 @@ def generate():
                 for sub_name, sub_url in subs:
                     epg = match_epg(sub_name, epg_map)
 
+                    tvg_id = epg["id"]
+                    tvg_name = epg["id"] if epg["id"] else sub_name
+                    tvg_logo = epg["logo"]
+
                     out.write(
-                        f'#EXTINF:-1 tvg-id="{epg["id"]}" tvg-name="{sub_name}" tvg-logo="{epg["logo"]}" group-title="{group}",{sub_name}\n'
+                        f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{tvg_name}" tvg-logo="{tvg_logo}" group-title="{group}",{sub_name}\n'
                     )
                     out.write(f"{sub_url}\n")
 
@@ -167,8 +175,12 @@ def generate():
             # ===== 普通频道 =====
             epg = match_epg(name, epg_map)
 
+            tvg_id = epg["id"]
+            tvg_name = epg["id"] if epg["id"] else name
+            tvg_logo = epg["logo"]
+
             out.write(
-                f'#EXTINF:-1 tvg-id="{epg["id"]}" tvg-name="{name}" tvg-logo="{epg["logo"]}" group-title="{group}",{name}\n'
+                f'#EXTINF:-1 tvg-id="{tvg_id}" tvg-name="{tvg_name}" tvg-logo="{tvg_logo}" group-title="{group}",{name}\n'
             )
             out.write(f"{url}\n")
 
